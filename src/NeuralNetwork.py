@@ -1,4 +1,5 @@
 import numpy as np
+import time
 
 def logistic(x,deriv=False):
     if deriv:
@@ -37,19 +38,30 @@ def euclid_error(y, y1, deriv=False):
 
 def cross_entropy_error(y, y1, deriv=False):
     if deriv:
-        return (y + 0.0001) / (y1 + 0.0001) - (1.0001 - y) / (1.0001 - y1) 
+        return (y + 0.0001) / (y1 + 0.0001); 
     else:
         pass
 
+def synch_shuffle(X, Y):
+    XY = np.concatenate((X, Y), axis=1)
+    np.random.shuffle(XY)
+    X = XY[:, :X.shape[1]]
+    Y = XY[:, X.shape[1]:]
+    return X, Y
+
 class myMLPClassifier:
     def __init__(self, activation = 'logistic', task = 'regression', hidden_layer_sizes = (), max_iter = 60000, random_state = 0, 
-        tol = 0.001, batch_size = 100):
+        tol = 0.001, batch_size = 100, num_epochs = 1, learn_rate = 1, verbose = False, show_epoch_progress = False):
         self.hidden_layer_sizes = hidden_layer_sizes
         self.hidden_layers_count = len(hidden_layer_sizes)
         self.max_iter = max_iter
         self.tol = tol
         self.task = task
         self.batch_size = batch_size
+        self.verbose = verbose;
+        self.show_epoch_progress = show_epoch_progress
+        self.learn_rate = learn_rate
+        self.num_epochs = num_epochs
         if activation == 'logistic':
             self.activation = logistic
         if activation == 'relu':
@@ -59,23 +71,25 @@ class myMLPClassifier:
             self.last_activation = self.activation
         if task == 'classification':
             self.error_func = euclid_error
-            self.last_activation = logistic
+            self.last_activation = self.activation
         np.random.seed(random_state)
 
-    def fit(self, X, y):
+    def fit(self, X, Y):
         N, Dx = X.shape;
+        oldX = X
+        oldY = Y
         if self.task == 'classification':
             num_of_classes = 0
-            for elem in y:
+            for elem in Y:
                 if elem > num_of_classes - 1:
                     num_of_classes = elem + 1
-            new_y = np.zeros((N, num_of_classes))
+            new_Y = np.zeros((N, num_of_classes))
             for i in range(N):
                 for j in range(num_of_classes):
-                    if y[i] == j:
-                        new_y[i][j] = 1
-            y = new_y
-        Dy = y.shape[1];
+                    if Y[i] == j:
+                        new_Y[i][j] = 1
+            Y = new_Y
+        Dy = Y.shape[1];
 
         if N < self.batch_size:
             self.batch_size = N
@@ -93,11 +107,27 @@ class myMLPClassifier:
             w = 2*np.random.random((self.layers[i-1].shape[1] , self.layers[i].shape[1])) - 1
             self.weights.append(w)
 
-        for i in range(0, N / self.batch_size):
-            print("Batch #" + str(i + 1) + ":")
-            self.fit_batch(X[i:i+self.batch_size], y[i:i+self.batch_size])
+        batches_count = N / self.batch_size
+        if self.show_epoch_progress:
+                percentiles = map(lambda x: batches_count * x / 100, list(range(101)))
 
-    def fit_batch(self, X, y):
+        for I in range(self.num_epochs):
+            t = time.clock()
+            print("Epoch #" + str(I + 1) + ":")
+            X, Y = synch_shuffle(X, Y)
+            for i in range(batches_count):
+                if self.show_epoch_progress and (i in percentiles):
+                    print(str(i * 100 / batches_count) + '%')
+                if self.verbose:
+                    print("Batch #" + str(i + 1) + ":")
+                if i == 0 and self.verbose:
+                    self.fit_batch(X[i:i+self.batch_size], Y[i:i+self.batch_size], True)
+                else:
+                    self.fit_batch(X[i:i+self.batch_size], Y[i:i+self.batch_size])
+            print('Predict error: ' + str(self.calc_predict_error(oldX, oldY)))
+            print(time.clock() - t)
+
+    def fit_batch(self, X, y, verbose = False):
         for j in range(self.max_iter):
             self.layers[0] = X
             for i in range(1, len(self.layers) - 1):
@@ -105,7 +135,7 @@ class myMLPClassifier:
             self.layers[-1] = self.last_activation(np.dot(self.layers[-2], self.weights[-1]))
             
             error = self.error_func(y, self.layers[-1], deriv=True)
-            if j % 10000 == 0:
+            if j == 0 and verbose:
                 print "Error:" + str(np.mean(np.abs(error)))
             if np.mean(np.abs(error)) < self.tol:
                 return
@@ -116,7 +146,7 @@ class myMLPClassifier:
                 else:
                     delta = error * self.activation(self.layers[i + 1], deriv=True)
                 error = delta.dot(self.weights[i].T)
-                self.weights[i] += self.layers[i].T.dot(delta)
+                self.weights[i] += self.learn_rate * self.layers[i].T.dot(delta)
 
     def predict(self, X):
         self.layers[0] = X;
@@ -136,11 +166,12 @@ class myMLPClassifier:
             return  predictions              
         return self.layers[-1]
 
-    def weights_norm(self):
-        norm = 0
-        n = 0
-        for weights_in_layer in self.weights:
-            norm += weights_in_layer.sum()
-            n += len(weights_in_layer)
-        return norm/n
+    def calc_predict_error(self, X, Y):
+        Y_predict = self.predict(X)
+        err = 0
+        for i in range(X.shape[0]):
+            if Y_predict[i] != Y[i]:
+                err += 1.0
+        err = err / X.shape[0]
+        return err
 

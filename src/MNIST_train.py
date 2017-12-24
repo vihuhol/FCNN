@@ -1,4 +1,3 @@
-import cv2
 import download_mnist
 import numpy as np
 from NeuralNetwork import myMLPClassifier
@@ -24,7 +23,8 @@ y_train = train_labs;
 y_test = test_labs
 
 print('Training...')
-clf = myMLPClassifier(hidden_layer_sizes=(800, ), random_state = 2, task='classification', tol=0.001, max_iter=100, batch_size = 10)
+clf = myMLPClassifier(hidden_layer_sizes=(800, ), task='classification', tol=0.001, 
+    max_iter=1, batch_size=1, num_epochs=30, learn_rate=0.01, show_epoch_progress=False)
 clf.fit(X_train, y_train)
 
 print('Predicting...')
